@@ -3,7 +3,6 @@ use rubik::Cube;
 
 mod rubik;
 
-
 #[derive(Parser, Debug)]
 struct Args {
     #[arg(short, long)]
@@ -15,6 +14,10 @@ fn main() {
 
     println!("Hello, {}!", args.target);
 
-    let cube = Cube::new();
-    dbg!(cube);
+    let mut cube = Cube::new();
+    dbg!(&cube);
+    for _i in 1..6 {
+        cube.rotate();
+        dbg!(&cube);
+    }
 }
