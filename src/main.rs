@@ -9,15 +9,17 @@ struct Args {
     target: String,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     println!("Hello, {}!", args.target);
 
-    let mut cube = Cube::new();
+    let mut cube = Cube::new().load_headers("headers.txt")?;
     dbg!(&cube);
     for _i in 1..6 {
         cube.rotate();
         dbg!(&cube);
     }
+
+    Ok(())
 }
