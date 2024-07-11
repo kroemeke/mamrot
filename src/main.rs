@@ -1,5 +1,7 @@
 use clap::Parser;
 use rubik::Cube;
+use rand::Rng;
+use rand::seq::SliceRandom;
 
 mod rubik;
 
@@ -12,14 +14,26 @@ struct Args {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    println!("Hello, {}!", args.target);
 
     let mut cube = Cube::new().load_headers("headers.txt")?;
-    dbg!(&cube);
-    for _i in 1..6 {
-        cube.rotate();
-        dbg!(&cube);
+
+    let mut request = String::new();
+    request.push_str("GET / HTTP/1.1\r\n");
+    request.push_str("Host: kroemeke.uk\r\n");
+    
+    // Initial throw of a dice...
+    cube.rotate();
+
+
+    let mut rnd = rand::thread_rng();
+
+    // Some random headers from our list
+    for _i in 1..cube.int_size_1 {
+        request.push_str(&format!("{}: {}\r\n", cube.headers.choose(&mut rnd).expect("Whoopsie"), cube.string_1));
     }
+
+    println!("{}",request);
+    println!("\r\n");
 
     Ok(())
 }

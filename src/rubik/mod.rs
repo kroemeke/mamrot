@@ -12,14 +12,14 @@ static MAGIC_STRINGS: [&str; 5] = ["%s%n%x", "%", ",", " ", "."];
 
 #[derive(Debug, Default)]
 pub struct Cube {
-    int_size_1: u64,
-    int_size_2: u64,
+    pub int_size_1: u64,
+    pub int_size_2: u64,
     int_size_3: u64,
     int_size_4: u64,
     int_size_5: u64,
     int_size_magic: u64,
-    string_1: String,
-    headers: Vec<String>,
+    pub string_1: String,
+    pub headers: Vec<String>,
 }
 
 impl Cube {
