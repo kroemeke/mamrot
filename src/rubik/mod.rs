@@ -5,7 +5,8 @@ use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
 // Typical buffer sizes
-static MAGIC_NUMBERS: [u64; 11] = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 32767, 65535];
+//static MAGIC_NUMBERS: [u64; 11] = [32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 32767, 65535];
+static MAGIC_NUMBERS: [u64; 8] = [32, 64, 128, 256, 512, 1024, 2048, 4096];
 
 // Format strings and header value separators
 static MAGIC_STRINGS: [&str; 5] = ["%s%n%x", "%", ",", " ", "."];
@@ -20,6 +21,7 @@ pub struct Cube {
     int_size_magic: u64,
     pub string_1: String,
     pub headers: Vec<String>,
+    pub wordlist: Vec<String>,
 }
 
 impl Cube {
@@ -42,6 +44,19 @@ impl Cube {
         Ok(self)
     }
 
+    pub fn load_wordlist(mut self, filename: &str) -> io::Result<Self> {
+        // Open file in ro mode
+        let file = File::open(filename)?;
+
+        // BufReader
+        let reader = BufReader::new(file);
+
+        // Load them up filtering unreadable lines
+        self.wordlist = reader.lines().filter_map(Result::ok).collect();
+
+        Ok(self)
+    }
+
     pub fn rotate(&mut self) {
         let mut rng = rand::thread_rng();
         self.int_size_1 = rng.gen_range(1..=10);
@@ -51,6 +66,8 @@ impl Cube {
         for i in 1..self.int_size_magic + self.int_size_1 {
             self.string_1
                 .push_str(MAGIC_STRINGS.choose(&mut rng).expect("poop"));
+            self.string_1
+                .push_str(self.wordlist.choose(&mut rng).expect("poop"));
         }
     }
 }
