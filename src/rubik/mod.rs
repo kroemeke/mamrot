@@ -229,13 +229,18 @@ impl Cube {
                 }
             }
             2 => {
-                // Strategy 3: Character Flood (Random Char * N)
+                // Strategy 3: Character Flood (Random Char * (N + small offset))
                 let char_idx = rng.gen_range(0..PRINTABLES.len());
                 // Rust char slicing on ASCII/UTF-8 string needs care, but PRINTABLES is all 1-byte chars here except maybe control codes.
                 // safer to just pick a char.
                 let c = PRINTABLES.chars().nth(char_idx).unwrap_or('A');
 
-                for _ in 0..self.int_size_magic {
+                // Fuzz slightly beyond the magic number to trigger off-by-one or small buffer overflows
+                // e.g., if Magic is 256, we might send 257, 260, 266...
+                let offset = rng.gen_range(0..=32);
+                let target_len = self.int_size_magic + offset;
+
+                for _ in 0..target_len {
                     self.string_1.push(c);
                 }
             }
