@@ -69,27 +69,18 @@ static MAGIC_PAYLOADS: [&str; 51] = [
 ];
 
 // Nginx/OpenResty HTTP Methods
-pub static NGINX_METHODS: [&str; 16] = [
+pub static NGINX_METHODS: [&str; 7] = [
     "GET",
     "POST",
     "PUT",
-    "DELETE",
     "HEAD",
     "OPTIONS",
     "TRACE",
     "CONNECT",
-    "PATCH",
-    "MKCOL",
-    "COPY",
-    "MOVE",
-    "PROPFIND",
-    "PROPPATCH",
-    "LOCK",
-    "UNLOCK",
 ];
 
 // Python's string.printable
-const PRINTABLES: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ \t\n\r\x0b\x0c";
+const PRINTABLES: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ \t\n\r\x0b\x0c";
 
 #[derive(Debug, Clone)]
 pub struct Cube {
@@ -99,8 +90,8 @@ pub struct Cube {
     _int_size_4: u64,
     _int_size_5: u64,
     int_size_magic: u64,
-    pub string_1: String,
-    pub uri: String,
+    pub string_1: Vec<u8>,
+    pub uri: Vec<u8>,
     pub headers: Arc<Vec<String>>,
     pub wordlist: Arc<Vec<String>>,
     pub methods: Arc<Vec<String>>,
@@ -116,8 +107,8 @@ impl Default for Cube {
             _int_size_4: 0,
             _int_size_5: 0,
             int_size_magic: 0,
-            string_1: String::new(),
-            uri: String::new(),
+            string_1: Vec::with_capacity(4096),
+            uri: Vec::with_capacity(128),
             headers: Arc::new(Vec::new()),
             wordlist: Arc::new(Vec::new()),
             methods: Arc::new(NGINX_METHODS.iter().map(|&s| s.to_string()).collect()),
@@ -197,80 +188,75 @@ impl Cube {
 
         match strategy {
             0 => {
-                // Strategy 1: Interleaved (Original Behavior modified slightly)
-                // Limit the loop to avoid overly massive strings if int_size_magic is huge,
-                // or just rely on int_size_magic as the total count.
-                // We'll use int_size_magic as a rough length target or iteration count.
-                // Since MAGIC_NUMBERS go up to 65535, we should be careful not to make it length * len(word).
-                // Let's iterate up to int_size_magic / 10 + 1 to keep it sane but "brave".
+                // Strategy 1: Interleaved
                 let iterations = (self.int_size_magic as usize / 10).max(1);
                 for _ in 0..iterations {
-                    self.string_1.push_str(
+                    self.string_1.extend_from_slice(
                         MAGIC_STRINGS
                             .choose(rng)
-                            .expect("Internal Error: MAGIC_STRINGS empty"),
+                            .expect("Internal Error: MAGIC_STRINGS empty")
+                            .as_bytes(),
                     );
                     if !self.wordlist.is_empty() {
-                        self.string_1.push_str(
+                        self.string_1.extend_from_slice(
                             self.wordlist
                                 .choose(rng)
-                                .expect("Internal Error: Wordlist empty during rotation"),
+                                .expect("Internal Error: Wordlist empty during rotation")
+                                .as_bytes(),
                         );
                     }
                 }
             }
             1 => {
-                // Strategy 2: Pure Repetition (Magic String * N)
-                let magic = MAGIC_STRINGS.choose(rng).unwrap();
-                // If magic is long, we might want fewer repetitions.
-                // But "brave" means long.
+                // Strategy 2: Pure Repetition
+                let magic = MAGIC_STRINGS.choose(rng).unwrap().as_bytes();
                 for _ in 0..self.int_size_magic {
-                    self.string_1.push_str(magic);
+                    self.string_1.extend_from_slice(magic);
                 }
             }
             2 => {
-                // Strategy 3: Character Flood (Random Char * (N + small offset))
+                // Strategy 3: Character Flood
                 let char_idx = rng.gen_range(0..PRINTABLES.len());
-                // Rust char slicing on ASCII/UTF-8 string needs care, but PRINTABLES is all 1-byte chars here except maybe control codes.
-                // safer to just pick a char.
-                let c = PRINTABLES.chars().nth(char_idx).unwrap_or('A');
+                let c = PRINTABLES[char_idx]; // direct u8
 
-                // Fuzz slightly beyond the magic number to trigger off-by-one or small buffer overflows
-                // e.g., if Magic is 256, we might send 257, 260, 266...
                 let offset = rng.gen_range(0..=32);
-                let target_len = self.int_size_magic + offset;
+                let target_len = (self.int_size_magic + offset) as usize;
 
-                for _ in 0..target_len {
-                    self.string_1.push(c);
-                }
+                self.string_1.extend(std::iter::repeat_n(c, target_len));
             }
             3 => {
                 // Strategy 4: Composite / Chaotic
-                // Mimic Archer: v += random.choice(rubik.cube) + random.choice(http_separators) ...
                 let components = rng.gen_range(2..20);
                 for _ in 0..components {
                     match rng.gen_range(0..3) {
-                        0 => self.string_1.push_str(MAGIC_PAYLOADS.choose(rng).unwrap()),
+                        0 => self
+                            .string_1
+                            .extend_from_slice(MAGIC_PAYLOADS.choose(rng).unwrap().as_bytes()),
                         1 => {
                             if !self.wordlist.is_empty() {
-                                self.string_1.push_str(self.wordlist.choose(rng).unwrap())
+                                self.string_1.extend_from_slice(
+                                    self.wordlist.choose(rng).unwrap().as_bytes(),
+                                )
                             }
                         }
-                        _ => self.string_1.push_str(MAGIC_STRINGS.choose(rng).unwrap()),
+                        _ => self
+                            .string_1
+                            .extend_from_slice(MAGIC_STRINGS.choose(rng).unwrap().as_bytes()),
                     }
-                    self.string_1.push_str(SEPARATORS.choose(rng).unwrap());
+                    self.string_1
+                        .extend_from_slice(SEPARATORS.choose(rng).unwrap().as_bytes());
                 }
             }
             4 => {
-                // Strategy 5: Magic Payload (Single edge case integer)
-                self.string_1.push_str(MAGIC_PAYLOADS.choose(rng).unwrap());
+                // Strategy 5: Magic Payload
+                self.string_1
+                    .extend_from_slice(MAGIC_PAYLOADS.choose(rng).unwrap().as_bytes());
             }
             _ => {}
         }
 
-        // Hard cap to prevent memory exhaustion / excessive packet size if logic goes wild
+        // Hard cap to prevent memory exhaustion
         if self.string_1.len() > 131072 {
-            // 128KB cap
             self.string_1.truncate(131072);
         }
 
@@ -279,76 +265,79 @@ impl Cube {
 
         match rng.gen_range(0..5) {
             0 => {
-                // Strategy 0: Slash Flood / Path Traversal simulation
-                // e.g. //////////// or /////WORD
+                // Strategy 0: Slash Flood
                 let count = if uri_len_target >= 2 {
                     rng.gen_range(2..=uri_len_target).min(128)
                 } else {
                     1
                 };
-                for _ in 0..count {
-                    self.uri.push('/');
-                }
-                // Occasionally append a word
+
+                self.uri.extend(std::iter::repeat_n(b'/', count));
+
                 if rng.gen_bool(0.3) && !self.wordlist.is_empty() {
-                    self.uri.push_str(self.wordlist.choose(rng).unwrap());
+                    self.uri
+                        .extend_from_slice(self.wordlist.choose(rng).unwrap().as_bytes());
                 }
             }
             1 => {
-                // Strategy 1: Wordlist Extended (WORD%n%n...)
-                self.uri.push('/');
+                // Strategy 1: Wordlist Extended
+                self.uri.push(b'/');
                 if !self.wordlist.is_empty() {
-                    self.uri.push_str(self.wordlist.choose(rng).unwrap());
+                    self.uri
+                        .extend_from_slice(self.wordlist.choose(rng).unwrap().as_bytes());
                 } else {
-                    self.uri.push_str("index");
+                    self.uri.extend_from_slice(b"index");
                 }
 
-                // Append junk (separators, magic, chars) until target length
                 while self.uri.len() < uri_len_target {
                     match rng.gen_range(0..3) {
-                        0 => self.uri.push_str(MAGIC_STRINGS.choose(rng).unwrap()),
-                        1 => self.uri.push_str(SEPARATORS.choose(rng).unwrap()),
+                        0 => self
+                            .uri
+                            .extend_from_slice(MAGIC_STRINGS.choose(rng).unwrap().as_bytes()),
+                        1 => self
+                            .uri
+                            .extend_from_slice(SEPARATORS.choose(rng).unwrap().as_bytes()),
                         _ => {
                             let char_idx = rng.gen_range(0..PRINTABLES.len());
-                            let c = PRINTABLES.chars().nth(char_idx).unwrap_or('a');
+                            let c = PRINTABLES[char_idx];
                             self.uri.push(c);
                         }
                     }
                 }
             }
             2 => {
-                // Strategy 2: Magic Strings Only (starting with /)
-                self.uri.push('/');
+                // Strategy 2: Magic Strings Only
+                self.uri.push(b'/');
                 while self.uri.len() < uri_len_target {
-                    self.uri.push_str(MAGIC_STRINGS.choose(rng).unwrap());
+                    self.uri
+                        .extend_from_slice(MAGIC_STRINGS.choose(rng).unwrap().as_bytes());
                 }
             }
             3 => {
-                // Strategy 3: Pure Chaos (random printable, starts with /)
-                self.uri.push('/');
+                // Strategy 3: Pure Chaos
+                self.uri.push(b'/');
                 for _ in 0..uri_len_target {
                     let char_idx = rng.gen_range(0..PRINTABLES.len());
-                    let c = PRINTABLES.chars().nth(char_idx).unwrap_or('a');
+                    let c = PRINTABLES[char_idx];
                     self.uri.push(c);
                 }
             }
             4 => {
-                // Strategy 4: Clean(ish) - just a word
-                self.uri.push('/');
+                // Strategy 4: Clean(ish)
+                self.uri.push(b'/');
                 if !self.wordlist.is_empty() {
-                    self.uri.push_str(self.wordlist.choose(rng).unwrap());
+                    self.uri
+                        .extend_from_slice(self.wordlist.choose(rng).unwrap().as_bytes());
                 }
             }
             _ => {}
         }
 
-        // Hard cap to 128 bytes
         if self.uri.len() > 128 {
             self.uri.truncate(128);
         }
-        // Ensure it's not empty
         if self.uri.is_empty() {
-            self.uri.push('/');
+            self.uri.push(b'/');
         }
     }
 }

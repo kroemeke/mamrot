@@ -18,6 +18,7 @@ impl SeedLog {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(path)?;
 
         // Ensure file is large enough (buffer_size * 8 bytes)

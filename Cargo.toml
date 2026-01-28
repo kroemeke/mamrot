@@ -5,5 +5,5 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.8", features = ["derive"] }
-rand = "0.8.5"
+rand = { version = "0.8.5", features = ["small_rng"] }
 tokio = { version = "1.41.1", features = ["full"] }

@@ -1,11 +1,12 @@
 use clap::Parser;
-use rand::rngs::StdRng;
+use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng}; // Added Rng
+use rand::{Rng, SeedableRng};
 use rubik::Cube;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -14,7 +15,7 @@ use tokio::time::{self, Duration};
 mod rubik;
 mod seed;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 struct Args {
     #[arg(short, long)]
     target: String,
@@ -49,6 +50,9 @@ struct Args {
     #[arg(long, default_value_t = 1_000_000)]
     seed_buffer_size: usize,
 
+    #[arg(long, default_value_t = 30)]
+    dns_refresh: u64,
+
     #[arg(long)]
     replay: Option<u64>,
 
@@ -79,10 +83,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- REPLAY MODE ---
     if let Some(seed) = args.replay {
-        let mut rng = StdRng::seed_from_u64(seed);
-        let mut request_buf = String::new();
-        let req_host = &args.target;
-        let req_end = "\r\n";
+        let mut rng = SmallRng::seed_from_u64(seed);
+        // Using Vec<u8> for request buffer to match new Cube structure
+        let mut request_buf = Vec::with_capacity(4096);
+        let req_host = args.target.as_bytes();
+        let req_end = b"\r\n";
 
         eprintln!("Replaying batch with seed: {}", seed);
 
@@ -94,16 +99,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .methods
                 .choose(&mut rng)
                 .expect("Internal Error: Methods empty");
-            request_buf.push_str(method);
-            request_buf.push(' ');
+            request_buf.extend_from_slice(method.as_bytes());
+            request_buf.push(b' ');
 
-            if !base_cube.uri.starts_with('/') && !base_cube.uri.starts_with("http") {
-                request_buf.push('/');
+            if !base_cube.uri.starts_with(b"/") && !base_cube.uri.starts_with(b"http") {
+                request_buf.push(b'/');
             }
-            request_buf.push_str(&base_cube.uri);
-            request_buf.push_str(" HTTP/1.1\r\nHost: ");
-            request_buf.push_str(req_host);
-            request_buf.push_str(req_end);
+            request_buf.extend_from_slice(&base_cube.uri);
+            request_buf.extend_from_slice(b" HTTP/1.1\r\nHost: ");
+            request_buf.extend_from_slice(req_host);
+            request_buf.extend_from_slice(req_end);
 
             for _ in 0..base_cube.int_size_1 {
                 let header_name = base_cube
@@ -111,17 +116,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .choose(&mut rng)
                     .expect("Internal Error: Headers empty");
 
-                request_buf.push_str(header_name);
-                request_buf.push_str(": ");
-                request_buf.push_str(&base_cube.string_1);
-                request_buf.push_str("\r\n");
+                request_buf.extend_from_slice(header_name.as_bytes());
+                request_buf.extend_from_slice(b": ");
+                request_buf.extend_from_slice(&base_cube.string_1);
+                request_buf.extend_from_slice(b"\r\n");
 
                 base_cube.rotate(&mut rng);
             }
-            request_buf.push_str("\r\n");
+            request_buf.extend_from_slice(b"\r\n");
             
             // Print request delimiter for clarity if multiple in batch
-            println!("{}", request_buf);
+            println!("{}", String::from_utf8_lossy(&request_buf));
             request_buf.clear();
         }
         return Ok(());
@@ -144,8 +149,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         seed_log = Some(Arc::new(logger));
     }
 
-    let (tx, mut rx) = mpsc::channel::<Event>(1024 * 10); // Buffer for events
+    // --- DNS RESOLUTION & REFRESH ---
+    let target_host = format!("{}:{}", args.target, args.port);
+    let initial_ips: Vec<SocketAddr> = tokio::net::lookup_host(&target_host)
+        .await
+        .map_err(|e| format!("Failed to resolve {}: {}", target_host, e))?
+        .collect();
 
+    if initial_ips.is_empty() {
+        return Err("DNS resolution returned no IPs".into());
+    }
+
+    eprintln!("Target resolved to: {:?}", initial_ips);
+    let target_ips = Arc::new(RwLock::new(initial_ips));
+
+    // Spawn DNS Refresh Task
+    {
+        let target_ips = target_ips.clone();
+        let target_host = target_host.clone();
+        let refresh_interval = Duration::from_secs(args.dns_refresh);
+        tokio::spawn(async move {
+            loop {
+                time::sleep(refresh_interval).await;
+                match tokio::net::lookup_host(&target_host).await {
+                    Ok(iter) => {
+                        let new_ips: Vec<SocketAddr> = iter.collect();
+                        if !new_ips.is_empty() {
+                            if let Ok(mut lock) = target_ips.write() {
+                                *lock = new_ips;
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // Keep using old IPs on failure
+                    }
+                }
+            }
+        });
+    }
+
+    let (tx, mut rx) = mpsc::channel::<Event>(1024 * 10); // Buffer for events
+    
     // Stats Printer Task
     tokio::spawn(async move {
         let mut stats: HashMap<String, u64> = HashMap::new();
@@ -237,16 +281,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let seed_log = seed_log.clone();
         let replay_seeds = replay_seeds.clone();
         let replay_index = replay_index.clone();
+        let target_ips = target_ips.clone();
 
         tokio::spawn(async move {
-            let mut request_buf = String::with_capacity(4096);
-            let mut master_rng = StdRng::from_entropy();
+            let mut request_buf = Vec::with_capacity(4096);
+            let mut master_rng = SmallRng::from_entropy(); // Use SmallRng for speed
 
             // Worker Loop (Reconnects on failure/lag)
             loop {
                 // Connect
+                let target_addr = {
+                    let ips = target_ips.read().unwrap();
+                    *ips.choose(&mut master_rng).expect("IP list empty")
+                };
+
                 let stream =
-                    match TcpStream::connect(format!("{}:{}", args.target, args.port)).await {
+                    match TcpStream::connect(target_addr).await {
                         Ok(s) => s,
                         Err(_) => {
                             let _ = tx.send(Event::Error("Connect Error".to_string())).await;
@@ -306,8 +356,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Writer Loop
                 // Pre-calculate fixed parts
-                let req_host = &args.target;
-                let req_end = "\r\n";
+                let req_host = args.target.as_bytes();
+                let req_end = b"\r\n";
 
                 loop {
                     if stop_signal.load(Ordering::Relaxed) {
@@ -361,7 +411,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         s
                     };
 
-                    let mut batch_rng = StdRng::seed_from_u64(seed);
+                    let mut batch_rng = SmallRng::seed_from_u64(seed);
 
                     for _ in 0..args.batch_size {
                         cube.rotate(&mut batch_rng);
@@ -372,18 +422,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .methods
                             .choose(&mut batch_rng)
                             .expect("Internal Error: Methods empty");
-                        request_buf.push_str(method);
-                        request_buf.push(' ');
+                        request_buf.extend_from_slice(method.as_bytes());
+                        request_buf.push(b' ');
 
                         // URI
-                        if !cube.uri.starts_with('/') && !cube.uri.starts_with("http") {
-                            request_buf.push('/');
+                        if !cube.uri.starts_with(b"/") && !cube.uri.starts_with(b"http") {
+                            request_buf.push(b'/');
                         }
-                        request_buf.push_str(&cube.uri);
+                        request_buf.extend_from_slice(&cube.uri);
 
-                        request_buf.push_str(" HTTP/1.1\r\nHost: ");
-                        request_buf.push_str(req_host);
-                        request_buf.push_str(req_end);
+                        request_buf.extend_from_slice(b" HTTP/1.1\r\nHost: ");
+                        request_buf.extend_from_slice(req_host);
+                        request_buf.extend_from_slice(req_end);
 
                         for _ in 0..cube.int_size_1 {
                             // Using push_str to avoid format! allocation
@@ -392,14 +442,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .choose(&mut batch_rng)
                                 .expect("Internal Error: Headers empty");
 
-                            request_buf.push_str(header_name);
-                            request_buf.push_str(": ");
-                            request_buf.push_str(&cube.string_1);
-                            request_buf.push_str("\r\n");
+                            request_buf.extend_from_slice(header_name.as_bytes());
+                            request_buf.extend_from_slice(b": ");
+                            request_buf.extend_from_slice(&cube.string_1);
+                            request_buf.extend_from_slice(b"\r\n");
 
                             cube.rotate(&mut batch_rng);
                         }
-                        request_buf.push_str("\r\n");
+                        request_buf.extend_from_slice(b"\r\n");
                     }
 
                     // Write with Timeout
@@ -411,7 +461,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = tx.send(Event::Attempted(args.batch_size)).await;
 
                     let write_result =
-                        time::timeout(write_timeout, wr.write_all(request_buf.as_bytes())).await;
+                        time::timeout(write_timeout, wr.write_all(&request_buf)).await;
 
                     match write_result {
                         Ok(Ok(())) => {
