@@ -3,6 +3,14 @@ name = "mamrot"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "mamrot"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mamrot"
+path = "src/bin/mamrot.rs"
+
 [dependencies]
 clap = { version = "4.5.8", features = ["derive"] }
 rand = { version = "0.8.5", features = ["small_rng"] }

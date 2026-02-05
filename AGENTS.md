@@ -65,7 +65,8 @@ Adhere strictly to the following conventions to maintain consistency with the ex
 ## Architecture & Structure
 
 ### Directory Structure
-- `src/main.rs`: Entry point. Handles CLI argument parsing (`Args` struct), TCP connection loop, and request construction.
+- `src/bin/mamrot.rs`: Entry point for the main binary. Handles CLI argument parsing (`Args` struct), TCP connection loop, and request construction.
+- `src/lib.rs`: Library entry point exporting modules.
 - `src/rubik/mod.rs`: Contains the `Cube` struct and logic for headers/wordlist loading and random rotation/mutation logic.
 - `src/seed.rs`: Handles ring-buffer seed logging (`SeedLog`) and loading seeds for replay (`load_seeds`).
 - `Cargo.toml`: Dependency management.
@@ -73,7 +74,7 @@ Adhere strictly to the following conventions to maintain consistency with the ex
 ### Key Components
 - **`Cube` Struct**: The core state machine for the fuzzer. It holds loaded headers, wordlists, and internal integer/string states that mutate on `rotate()`.
 - **`SeedLog`**: Manages the binary ring buffer file (`seeds.bin`) for reproducible fuzzing.
-- **Fuzzing Loop**: Located in `main.rs`.
+- **Fuzzing Loop**: Located in `bin/mamrot.rs`.
     1.  Constructs a base request.
     2.  Rotates the `Cube` using a seed (either generated or loaded from file).
     3.  Appends random headers based on `Cube` state.
@@ -95,7 +96,7 @@ When working in this repository, follow these behavioral guidelines:
 
 3.  **Context Awareness**:
     -   Read `src/rubik/mod.rs` before modifying fuzzing logic.
-    -   Read `src/main.rs` before modifying the networking or CLI interface.
+    -   Read `src/bin/mamrot.rs` before modifying the networking or CLI interface.
 
 4.  **Tool Usage**:
     -   Use `grep` to find usage of structs before changing their definition.
@@ -108,7 +109,7 @@ When working in this repository, follow these behavioral guidelines:
 ## Common Tasks Reference
 
 ### Adding a new CLI Argument
-1.  Modify `struct Args` in `src/main.rs`.
+1.  Modify `struct Args` in `src/bin/mamrot.rs`.
 2.  Add the field with `#[arg(...)]` attributes.
 3.  Use the new field in the `main` loop.
 
@@ -116,7 +117,7 @@ When working in this repository, follow these behavioral guidelines:
 1.  Edit `src/rubik/mod.rs`.
 2.  Update `Cube` struct fields if necessary.
 3.  Update `rotate()` method to alter how state changes.
-4.  Update `main.rs` loop to utilize the new state if it affects request construction.
+4.  Update `bin/mamrot.rs` loop to utilize the new state if it affects request construction.
 
 ### Debugging
 - Use `eprintln!` for debug logs to avoid polluting standard output (which might be piped).

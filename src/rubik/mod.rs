@@ -69,15 +69,7 @@ static MAGIC_PAYLOADS: [&str; 51] = [
 ];
 
 // Nginx/OpenResty HTTP Methods
-pub static NGINX_METHODS: [&str; 7] = [
-    "GET",
-    "POST",
-    "PUT",
-    "HEAD",
-    "OPTIONS",
-    "TRACE",
-    "CONNECT",
-];
+pub static NGINX_METHODS: [&str; 7] = ["GET", "POST", "PUT", "HEAD", "OPTIONS", "TRACE", "CONNECT"];
 
 // Python's string.printable
 const PRINTABLES: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ \t\n\r\x0b\x0c";

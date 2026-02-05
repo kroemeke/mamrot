@@ -1,8 +1,9 @@
 use clap::Parser;
+use mamrot::rubik::Cube;
+use mamrot::seed;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
-use rubik::Cube;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -11,9 +12,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::{self, Duration};
-
-mod rubik;
-mod seed;
 
 #[derive(Parser, Debug, Clone)]
 struct Args {
@@ -124,7 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 base_cube.rotate(&mut rng);
             }
             request_buf.extend_from_slice(b"\r\n");
-            
+
             // Print request delimiter for clarity if multiple in batch
             println!("{}", String::from_utf8_lossy(&request_buf));
             request_buf.clear();
@@ -189,7 +187,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let (tx, mut rx) = mpsc::channel::<Event>(1024 * 10); // Buffer for events
-    
+
     // Stats Printer Task
     tokio::spawn(async move {
         let mut stats: HashMap<String, u64> = HashMap::new();
@@ -277,7 +275,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let args = args.clone();
         let mut cube = base_cube.clone();
         let tx = tx.clone();
-        
+
         let seed_log = seed_log.clone();
         let replay_seeds = replay_seeds.clone();
         let replay_index = replay_index.clone();
@@ -295,15 +293,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     *ips.choose(&mut master_rng).expect("IP list empty")
                 };
 
-                let stream =
-                    match TcpStream::connect(target_addr).await {
-                        Ok(s) => s,
-                        Err(_) => {
-                            let _ = tx.send(Event::Error("Connect Error".to_string())).await;
-                            time::sleep(Duration::from_secs(1)).await;
-                            continue;
-                        }
-                    };
+                let stream = match TcpStream::connect(target_addr).await {
+                    Ok(s) => s,
+                    Err(_) => {
+                        let _ = tx.send(Event::Error("Connect Error".to_string())).await;
+                        time::sleep(Duration::from_secs(1)).await;
+                        continue;
+                    }
+                };
 
                 let mut requests_sent_this_conn: u64 = 0;
 
@@ -400,7 +397,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // --- DETERMINE SEED ---
                     let seed = if let Some(seeds) = &replay_seeds {
                         // REPLAY MODE: Fetch next seed from list (looping)
-                        let idx = replay_index.as_ref().unwrap().fetch_add(1, Ordering::Relaxed);
+                        let idx = replay_index
+                            .as_ref()
+                            .unwrap()
+                            .fetch_add(1, Ordering::Relaxed);
                         seeds[idx % seeds.len()]
                     } else {
                         // FUZZ MODE: Generate new seed and log it
