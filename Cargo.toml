@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "mamrot"
 path = "src/bin/mamrot.rs"
 
+[[bin]]
+name = "mamrotd"
+path = "src/bin/mamrotd.rs"
+
 [dependencies]
 clap = { version = "4.5.8", features = ["derive"] }
 rand = { version = "0.8.5", features = ["small_rng"] }

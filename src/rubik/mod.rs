@@ -200,9 +200,15 @@ impl Cube {
                 }
             }
             1 => {
-                // Strategy 2: Pure Repetition
+                // Strategy 2: Pure Repetition (Targeted Buffer Overflow)
                 let magic = MAGIC_STRINGS.choose(rng).unwrap().as_bytes();
-                for _ in 0..self.int_size_magic {
+
+                // Add a small offset to the magic number to hit boundary conditions
+                // or overflow slightly (e.g. 256, 257, etc.)
+                let offset = rng.gen_range(0..=32);
+                let target_len = (self.int_size_magic + offset) as usize;
+
+                while self.string_1.len() < target_len {
                     self.string_1.extend_from_slice(magic);
                 }
             }

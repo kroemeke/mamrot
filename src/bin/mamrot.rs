@@ -18,7 +18,7 @@ struct Args {
     #[arg(short, long)]
     target: String,
 
-    #[arg(long, default_value = "headers.txt")]
+    #[arg(long, default_value = "request_headers.txt")]
     headers: String,
 
     #[arg(short, long, default_value = "wordlist.txt")]
