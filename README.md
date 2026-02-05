@@ -41,7 +41,8 @@ cargo run --bin mamrotd --release -- --port <PORT> [OPTIONS]
 
 ### Options
 
-- `-p, --port <PORT>`: Port to listen on (default: 8100).
+- `-p, --port <PORT>`: Port to listen on (default: 80).
+- `-b, --bind <BIND>`: Address to bind to (default: `::` for dual-stack IPv4/IPv6).
 - `--headers <HEADERS>`: Path to headers file (default: response_headers.txt).
 - `--wordlist <WORDLIST>`: Path to wordlist file (default: wordlist.txt).
 - `--seed-log <FILE>`: Path to the binary seed log file (default: seeds.bin).
@@ -107,7 +108,7 @@ cargo run --bin mamrot --release -- --target <HOST> --replay-file seeds.bin
 You can also make the server deterministic by loading a seed file. The server will cycle through the seeds in the file for each incoming connection, generating the exact same sequence of "random" responses as recorded previously.
 
 ```bash
-cargo run --bin mamrotd --release -- --port 8100 --replay-file seeds.bin
+cargo run --bin mamrotd --release -- --port 80 --replay-file seeds.bin
 ```
 
 ### Bisecting a Crash (Advanced)

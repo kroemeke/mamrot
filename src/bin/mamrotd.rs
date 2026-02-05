@@ -12,8 +12,11 @@ use tokio::time::{self, Duration};
 
 #[derive(Parser, Debug, Clone)]
 struct Args {
-    #[arg(short, long, default_value_t = 8100)]
+    #[arg(short, long, default_value_t = 80)]
     port: usize,
+
+    #[arg(short, long, default_value = "::")]
+    bind: String,
 
     #[arg(long, default_value = "response_headers.txt")]
     headers: String,
@@ -75,7 +78,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Bind Listener
-    let addr = format!("0.0.0.0:{}", args.port);
+    let host = if let Ok(ip) = args.bind.parse::<std::net::IpAddr>() {
+        if ip.is_ipv6() {
+            format!("[{}]", ip)
+        } else {
+            args.bind.clone()
+        }
+    } else {
+        args.bind.clone()
+    };
+    let addr = format!("{}:{}", host, args.port);
     let listener = TcpListener::bind(&addr).await?;
 
     eprintln!("Listening on {}", addr);
