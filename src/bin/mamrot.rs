@@ -259,8 +259,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let mut sorted_stats: Vec<_> = stats.iter().collect();
                         sorted_stats.sort_by(|a, b| b.1.cmp(a.1));
 
-                        for (code, count) in sorted_stats {
-                            println!("Status {}: {} times", code, count);
+                        let (statuses, errors): (Vec<_>, Vec<_>) = sorted_stats
+                            .into_iter()
+                            .partition(|(k, _)| k.chars().all(char::is_numeric));
+
+                        for (err, count) in errors {
+                            println!("{}: {} times", err, count);
+                        }
+
+                        if !statuses.is_empty() {
+                            let mut status_line = String::from("Status: ");
+                            for (code, count) in statuses {
+                                use std::fmt::Write;
+                                let _ = write!(status_line, "{}[{}] ", code, count);
+                            }
+                            println!("{}", status_line);
                         }
                         println!("--- Stats (RPS: Attempt {:.2}, Sent {:.2}, Resp {:.2}) | BW: {:.2} Mbps | Avg Req/Conn: {:.2} ---", attempt_rps, sent_rps, resp_rps, mbps, avg_req_per_conn);
                         println!("-------------");
