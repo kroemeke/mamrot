@@ -92,14 +92,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     eprintln!("Listening on {}", addr);
 
+    let total_requests = Arc::new(AtomicUsize::new(0));
+    let total_responses = Arc::new(AtomicUsize::new(0));
+
+    // Stats Task
+    {
+        let total_requests = total_requests.clone();
+        let total_responses = total_responses.clone();
+        tokio::spawn(async move {
+            let mut last_req = 0;
+            let mut last_resp = 0;
+            let mut interval = time::interval(Duration::from_secs(1));
+            // First tick is immediate
+            interval.tick().await;
+
+            loop {
+                interval.tick().await;
+                let curr_req = total_requests.load(Ordering::Relaxed);
+                let curr_resp = total_responses.load(Ordering::Relaxed);
+
+                let req_rps = curr_req - last_req;
+                let resp_rps = curr_resp - last_resp;
+
+                if req_rps > 0 || resp_rps > 0 || curr_req > 0 {
+                    println!(
+                        "RPS: {} req/s | {} resp/s -- Total: {} req | {} resp",
+                        req_rps, resp_rps, curr_req, curr_resp
+                    );
+                }
+
+                last_req = curr_req;
+                last_resp = curr_resp;
+            }
+        });
+    }
+
     loop {
         let (mut socket, _peer_addr) = listener.accept().await?;
-        
+
         let args = args.clone();
         let mut cube = base_cube.clone();
         let seed_log = seed_log.clone();
         let replay_seeds = replay_seeds.clone();
         let replay_index = replay_index.clone();
+        let total_requests = total_requests.clone();
+        let total_responses = total_responses.clone();
 
         tokio::spawn(async move {
             // Optional: Set timeout for the whole interaction
@@ -111,7 +148,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut buf = [0u8; 1024];
                 match socket.read(&mut buf).await {
                     Ok(0) => return, // EOF
-                    Ok(_) => {} // Got data, proceed
+                    Ok(_) => {
+                        total_requests.fetch_add(1, Ordering::Relaxed);
+                    }
                     Err(_) => return, // Error
                 };
 
@@ -133,16 +172,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // 3. Fuzz
                 let mut rng = SmallRng::seed_from_u64(seed);
-                
+
                 // Rotate cube once to set initial random state
                 cube.rotate(&mut rng);
 
                 // 4. Construct Response
                 let version = HTTP_VERSIONS.choose(&mut rng).unwrap();
                 let code = HTTP_CODES.choose(&mut rng).unwrap();
-                
+
                 let mut response = Vec::with_capacity(4096);
-                
+
                 // Status Line
                 response.extend_from_slice(b"HTTP/");
                 response.extend_from_slice(version.as_bytes());
@@ -156,21 +195,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for _ in 0..cube.int_size_1 {
                     let default_header = String::from("X-Fuzz");
                     let header_name = cube.headers.choose(&mut rng).unwrap_or(&default_header);
-                    
+
                     // Generate Value
                     // Archer: v += random.choice(rubik.cube) + random.choice(http_separators) + random.choice(rubik.cube)
                     // We will approximate this using cube.string_1 which is populated with similar garbage
                     // But to be closer to archer's loop:
                     //   for value in range(0, rubik.rubik_int_r0):
                     //     v += ...
-                    
+
                     // In our Cube::rotate, string_1 is already built using complex strategies.
                     // We will just use string_1 as the value.
                     // If we want to strictly mimic the "header value composed of multiple cube items separated by separators",
                     // we might need to do that manually here, but reusing `cube.string_1` is safer/cleaner given the instruction
                     // "Don't insist on using rubik if it would mean changes to mamrot http client".
                     // The current `rotate` strategies in `mod.rs` already produce complex strings including separators.
-                    
+
                     response.extend_from_slice(header_name.as_bytes());
                     response.extend_from_slice(b": ");
                     response.extend_from_slice(&cube.string_1);
@@ -184,13 +223,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 response.extend_from_slice(b"A\r\n"); // Body from archerd
 
                 // 5. Write and Close
-                let _ = socket.write_all(&response).await;
+                if socket.write_all(&response).await.is_ok() {
+                    total_responses.fetch_add(1, Ordering::Relaxed);
+                }
 
                 if args.timeout > 0 {
                     time::sleep(Duration::from_millis(args.timeout)).await;
                 }
                 // Connection drops when socket goes out of scope
-            }).await;
+            })
+            .await;
         });
     }
 }
