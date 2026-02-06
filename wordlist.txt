@@ -160,3 +160,9 @@ max-age
 ?
 #
 +
+User-Agent
+Origin
+Accept-Language
+X-Forwarded-Proto
+Cookie
+Authorization
