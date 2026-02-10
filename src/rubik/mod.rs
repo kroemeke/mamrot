@@ -176,7 +176,7 @@ impl Cube {
         self.string_1.clear();
 
         // Select a strategy
-        let strategy = rng.gen_range(0..5);
+        let strategy = rng.gen_range(0..7);
 
         match strategy {
             0 => {
@@ -237,6 +237,7 @@ impl Cube {
                                 )
                             }
                         }
+
                         _ => self
                             .string_1
                             .extend_from_slice(MAGIC_STRINGS.choose(rng).unwrap().as_bytes()),
@@ -249,6 +250,21 @@ impl Cube {
                 // Strategy 5: Magic Payload
                 self.string_1
                     .extend_from_slice(MAGIC_PAYLOADS.choose(rng).unwrap().as_bytes());
+            }
+            5 => {
+                // Strategy 6: Single Wordlist Item
+                if !self.wordlist.is_empty() {
+                    self.string_1
+                        .extend_from_slice(self.wordlist.choose(rng).unwrap().as_bytes());
+                } else {
+                    // Fallback to Magic String if wordlist is empty
+                    self.string_1
+                        .extend_from_slice(MAGIC_STRINGS.choose(rng).unwrap().as_bytes());
+                }
+            }
+            6 => {
+                // Strategy 7: Empty Value (Do nothing)
+                // self.string_1 is already cleared at the start of rotate
             }
             _ => {}
         }
@@ -334,8 +350,65 @@ impl Cube {
         if self.uri.len() > 128 {
             self.uri.truncate(128);
         }
+
         if self.uri.is_empty() {
             self.uri.push(b'/');
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::SeedableRng;
+
+    #[test]
+    fn test_rotate_generates_single_wordlist_item() {
+        let mut cube = Cube::new();
+        // Manually inject wordlist for testing
+        cube.wordlist = Arc::new(vec!["deflate".to_string(), "gzip".to_string()]);
+
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+
+        let mut found_single_word = false;
+
+        // Run enough times to be statistically likely to hit Strategy 6 (1/6 chance)
+        for _ in 0..1000 {
+            cube.rotate(&mut rng);
+            let result = String::from_utf8_lossy(&cube.string_1);
+            if result == "deflate" || result == "gzip" {
+                found_single_word = true;
+                break;
+            }
+        }
+
+        assert!(
+            found_single_word,
+            "Should have generated a single wordlist item (Strategy 6)"
+        );
+    }
+
+    #[test]
+    fn test_rotate_generates_empty_value() {
+        let mut cube = Cube::new();
+        // Manually inject wordlist for testing to ensure Strategy 6 doesn't interfere
+        cube.wordlist = Arc::new(vec!["test".to_string()]);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+
+        let mut found_empty = false;
+
+        // Run enough times to be statistically likely to hit Strategy 7 (1/7 chance)
+        for _ in 0..1000 {
+            cube.rotate(&mut rng);
+            if cube.string_1.is_empty() {
+                found_empty = true;
+                break;
+            }
+        }
+
+        assert!(
+            found_empty,
+            "Should have generated an empty value (Strategy 7)"
+        );
     }
 }
