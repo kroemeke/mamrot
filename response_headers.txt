@@ -1,3 +1,4 @@
+Accept-CH
 Accept-Patch
 Accept-Post
 Accept-Ranges
@@ -19,6 +20,7 @@ CF-RAY
 CF-Visitor
 Clear-Site-Data
 Connection
+Content-Digest
 Content-Disposition
 Content-Encoding
 Content-Language
@@ -29,6 +31,7 @@ Content-Range
 Content-Security-Policy
 Content-Security-Policy-Report-Only
 Content-Type
+Critical-CH
 Cross-Origin-Embedder-Policy
 Cross-Origin-Opener-Policy
 Cross-Origin-Resource-Policy
@@ -42,6 +45,7 @@ Keep-Alive
 Last-Modified
 Link
 Location
+NEL
 None
 P3P
 Permissions-Policy
@@ -53,6 +57,8 @@ Public-Key-Pins
 Referrer-Policy
 Refresh
 Reporting-Endpoints
+Report-To
+Repr-Digest
 Retry-After
 Sec-WebSocket-Accept
 Sec-WebSocket-Extensions
@@ -78,8 +84,10 @@ Via
 Warning
 WWW-Authenticate
 X-Content-Type-Options
+X-DNS-Prefetch-Control
 X-Forwarded-Proto
 X-Frame-Options
 X-Permitted-Cross-Domain-Policies
 X-Powered-By
+X-Robots-Tag
 X-XSS-Protection
