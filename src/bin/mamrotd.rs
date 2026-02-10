@@ -4,8 +4,9 @@ use mamrot::seed;
 use rand::rngs::SmallRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::time::{self, Duration};
@@ -112,11 +113,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let total_requests = Arc::new(AtomicUsize::new(0));
     let total_responses = Arc::new(AtomicUsize::new(0));
+    let errors = Arc::new(Mutex::new(HashMap::<String, usize>::new()));
 
     // Stats Task
     {
         let total_requests = total_requests.clone();
         let total_responses = total_responses.clone();
+        let errors = errors.clone();
         tokio::spawn(async move {
             let mut last_req = 0;
             let mut last_resp = 0;
@@ -137,6 +140,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "RPS: {} req/s | {} resp/s -- Total: {} req | {} resp",
                         req_rps, resp_rps, curr_req, curr_resp
                     );
+
+                    let err_map = errors.lock().unwrap();
+                    if !err_map.is_empty() {
+                        let mut sorted_errors: Vec<_> = err_map.iter().collect();
+                        sorted_errors.sort_by(|a, b| b.1.cmp(a.1));
+                        for (err, count) in sorted_errors {
+                            println!("  {}: {} times", err, count);
+                        }
+                    }
                 }
 
                 last_req = curr_req;
@@ -146,7 +158,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     loop {
-        let (mut socket, _peer_addr) = listener.accept().await?;
+        let (mut socket, _peer_addr) = match listener.accept().await {
+            Ok(s) => s,
+            Err(e) => {
+                let mut map = errors.lock().unwrap();
+                *map.entry(format!("Accept Error: {}", e)).or_insert(0) += 1;
+                continue;
+            }
+        };
 
         let args = args.clone();
         let mut cube = base_cube.clone();
@@ -155,6 +174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let replay_index = replay_index.clone();
         let total_requests = total_requests.clone();
         let total_responses = total_responses.clone();
+        let errors = errors.clone();
         let http_codes = http_codes.clone();
 
         tokio::spawn(async move {
@@ -170,7 +190,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Ok(_) => {
                         total_requests.fetch_add(1, Ordering::Relaxed);
                     }
-                    Err(_) => return, // Error
+                    Err(e) => {
+                        let mut map = errors.lock().unwrap();
+                        *map.entry(format!("Read Error: {}", e)).or_insert(0) += 1;
+                        return;
+                    }
                 };
 
                 // 2. Determine Seed
@@ -242,8 +266,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 response.extend_from_slice(b"A\r\n"); // Body from archerd
 
                 // 5. Write and Close
-                if socket.write_all(&response).await.is_ok() {
-                    total_responses.fetch_add(1, Ordering::Relaxed);
+                match socket.write_all(&response).await {
+                    Ok(_) => {
+                        total_responses.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(e) => {
+                        let mut map = errors.lock().unwrap();
+                        *map.entry(format!("Write Error: {}", e)).or_insert(0) += 1;
+                    }
                 }
 
                 if args.timeout > 0 {

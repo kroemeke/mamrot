@@ -56,6 +56,9 @@ struct Args {
 
     #[arg(long)]
     replay_file: Option<String>,
+
+    #[arg(long, default_value_t = false)]
+    ipv4_only: bool,
 }
 
 enum Event {
@@ -152,9 +155,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let initial_ips: Vec<SocketAddr> = tokio::net::lookup_host(&target_host)
         .await
         .map_err(|e| format!("Failed to resolve {}: {}", target_host, e))?
+        .filter(|ip| !args.ipv4_only || ip.is_ipv4())
         .collect();
 
     if initial_ips.is_empty() {
+        if args.ipv4_only {
+            return Err("DNS resolution returned no IPv4 IPs".into());
+        }
         return Err("DNS resolution returned no IPs".into());
     }
 
@@ -166,12 +173,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let target_ips = target_ips.clone();
         let target_host = target_host.clone();
         let refresh_interval = Duration::from_secs(args.dns_refresh);
+        let ipv4_only = args.ipv4_only;
         tokio::spawn(async move {
             loop {
                 time::sleep(refresh_interval).await;
                 match tokio::net::lookup_host(&target_host).await {
                     Ok(iter) => {
-                        let new_ips: Vec<SocketAddr> = iter.collect();
+                        let new_ips: Vec<SocketAddr> = iter
+                            .filter(|ip| !ipv4_only || ip.is_ipv4())
+                            .collect();
                         if !new_ips.is_empty() {
                             if let Ok(mut lock) = target_ips.write() {
                                 *lock = new_ips;
@@ -308,8 +318,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let stream = match TcpStream::connect(target_addr).await {
                     Ok(s) => s,
-                    Err(_) => {
-                        let _ = tx.send(Event::Error("Connect Error".to_string())).await;
+                    Err(e) => {
+                        let _ = tx.send(Event::Error(format!("Connect Error: {}", e))).await;
                         time::sleep(Duration::from_secs(1)).await;
                         continue;
                     }
@@ -353,10 +363,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     }
                                 }
                             }
-                            Err(_) => {
+                            Err(e) => {
                                 // Read Error
                                 let _ =
-                                    tx_reader.send(Event::Error("Read Error".to_string())).await;
+                                    tx_reader.send(Event::Error(format!("Read Error: {}", e))).await;
                                 stop_reader.store(true, Ordering::Relaxed);
                                 break;
                             }
