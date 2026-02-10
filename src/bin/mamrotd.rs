@@ -35,22 +35,40 @@ struct Args {
 
     #[arg(long, default_value_t = 10)]
     timeout: u64,
+
+    #[arg(long, default_value = "http_codes_standard.txt")]
+    http_codes: Vec<String>,
 }
 
 // Mimicking archerd/modules/httpd values
 static HTTP_VERSIONS: [&str; 5] = ["0.9", "1.0", "1.1", "2.0", "3.0"];
-
-static HTTP_CODES: [&str; 37] = [
-    "100", "101", "200", "201", "202", "203", "204", "205", "206", "300", "301", "302", "303",
-    "304", "305", "307", "400", "401", "403", "404", "405", "406", "407", "408", "409", "410",
-    "411", "412", "413", "414", "416", "500", "501", "502", "503", "504", "505",
-];
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Arc::new(Args::parse());
 
     eprintln!("Starting mamrotd on port {}", args.port);
+
+    // Load HTTP Codes
+    let mut http_codes = Vec::new();
+    for path in &args.http_codes {
+        use std::io::BufRead;
+        let file =
+            std::fs::File::open(path).map_err(|e| format!("Failed to open {}: {}", path, e))?;
+        let reader = std::io::BufReader::new(file);
+        for line in reader.lines() {
+            let line = line?;
+            let trimmed = line.trim();
+            if !trimmed.is_empty() && !trimmed.starts_with("//") {
+                http_codes.push(trimmed.to_string());
+            }
+        }
+    }
+
+    if http_codes.is_empty() {
+        return Err("No HTTP codes loaded".into());
+    }
+    let http_codes = Arc::new(http_codes);
 
     // Load initial cube state
     let base_cube = Cube::new()
@@ -137,6 +155,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let replay_index = replay_index.clone();
         let total_requests = total_requests.clone();
         let total_responses = total_responses.clone();
+        let http_codes = http_codes.clone();
 
         tokio::spawn(async move {
             // Optional: Set timeout for the whole interaction
@@ -178,7 +197,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // 4. Construct Response
                 let version = HTTP_VERSIONS.choose(&mut rng).unwrap();
-                let code = HTTP_CODES.choose(&mut rng).unwrap();
+                let code = http_codes.choose(&mut rng).unwrap();
 
                 let mut response = Vec::with_capacity(4096);
 
