@@ -42,7 +42,7 @@ struct Args {
     #[arg(long, default_value_t = 4)]
     batch_size: usize,
 
-    #[arg(long, default_value = "seeds.bin")]
+    #[arg(long, default_value = "request_seeds.bin")]
     seed_log: String,
 
     #[arg(long, default_value_t = 1_000_000)]

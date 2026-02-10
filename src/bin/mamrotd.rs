@@ -24,7 +24,7 @@ struct Args {
     #[arg(short, long, default_value = "wordlist.txt")]
     wordlist: String,
 
-    #[arg(long, default_value = "seeds.bin")]
+    #[arg(long, default_value = "response_seeds.bin")]
     seed_log: String,
 
     #[arg(long, default_value_t = 1_000_000)]
