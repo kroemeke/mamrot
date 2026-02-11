@@ -267,29 +267,42 @@ impl Cube {
                 // self.string_1 is already cleared at the start of rotate
             }
             7 => {
-                // Strategy 8: Valid Prefix + Invalid UTF-8 / Garbage
-                // Helpful for finding parsers that crash on bad encoding after a valid token
-
-                // 1. Optional Valid Prefix
-                if rng.gen_bool(0.7) {
-                    if !self.wordlist.is_empty() && rng.gen_bool(0.5) {
-                        self.string_1
-                            .extend_from_slice(self.wordlist.choose(rng).unwrap().as_bytes());
-                    } else {
-                        self.string_1
-                            .extend_from_slice(MAGIC_STRINGS.choose(rng).unwrap().as_bytes());
+                // Strategy 8: Broken UTF-8 / Garbage Mixed (Composite)
+                // Mixes broken UTF-8 segments with wordlist/magic strings
+                let components = rng.gen_range(2..20);
+                for i in 0..components {
+                    match rng.gen_range(0..3) {
+                        0 => {
+                            if !self.wordlist.is_empty() {
+                                self.string_1.extend_from_slice(
+                                    self.wordlist.choose(rng).unwrap().as_bytes(),
+                                );
+                            } else {
+                                self.string_1.extend_from_slice(
+                                    MAGIC_STRINGS.choose(rng).unwrap().as_bytes(),
+                                );
+                            }
+                        }
+                        1 => {
+                            self.string_1
+                                .extend_from_slice(MAGIC_STRINGS.choose(rng).unwrap().as_bytes());
+                        }
+                        _ => {
+                            // Broken UTF-8 Segment
+                            let segment_len = rng.gen_range(1..=32);
+                            for _ in 0..segment_len {
+                                if rng.gen_bool(0.7) {
+                                    self.string_1.push(rng.gen_range(128..=255));
+                                } else {
+                                    self.string_1.push(rng.gen::<u8>());
+                                }
+                            }
+                        }
                     }
-                }
 
-                // 2. Append Garbage (High bit set bytes likely to be invalid UTF-8)
-                let garbage_len = rng.gen_range(1..=128);
-                for _ in 0..garbage_len {
-                    // Generate full u8 range, but bias towards high bytes (128-255)
-                    // to ensure invalid UTF-8 sequences
-                    if rng.gen_bool(0.7) {
-                        self.string_1.push(rng.gen_range(128..=255));
-                    } else {
-                        self.string_1.push(rng.gen::<u8>());
+                    if i < components - 1 {
+                        self.string_1
+                            .extend_from_slice(SEPARATORS.choose(rng).unwrap().as_bytes());
                     }
                 }
             }
