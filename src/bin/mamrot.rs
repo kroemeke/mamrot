@@ -179,9 +179,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 time::sleep(refresh_interval).await;
                 match tokio::net::lookup_host(&target_host).await {
                     Ok(iter) => {
-                        let new_ips: Vec<SocketAddr> = iter
-                            .filter(|ip| !ipv4_only || ip.is_ipv4())
-                            .collect();
+                        let new_ips: Vec<SocketAddr> =
+                            iter.filter(|ip| !ipv4_only || ip.is_ipv4()).collect();
                         if !new_ips.is_empty() {
                             if let Ok(mut lock) = target_ips.write() {
                                 *lock = new_ips;
@@ -365,8 +364,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             Err(e) => {
                                 // Read Error
-                                let _ =
-                                    tx_reader.send(Event::Error(format!("Read Error: {}", e))).await;
+                                let _ = tx_reader
+                                    .send(Event::Error(format!("Read Error: {}", e)))
+                                    .await;
                                 stop_reader.store(true, Ordering::Relaxed);
                                 break;
                             }

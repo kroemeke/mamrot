@@ -13,6 +13,8 @@ Age
 Allow
 Alt-Svc
 Cache-Control
+cache-tag
+CDN-Cache-Control
 CDN-Loop
 CF-Connecting-IP
 CF-IPCountry
@@ -73,6 +75,7 @@ Set-Cookie2
 SourceMap
 Status
 Strict-Transport-Security
+Surrogate-Control
 TE
 Timing-Allow-Origin
 Trailer

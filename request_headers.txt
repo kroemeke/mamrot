@@ -72,6 +72,7 @@ Sec-WebSocket-Protocol
 Sec-WebSocket-Version
 Service-Worker
 Service-Worker-Navigation-Preload
+Speculation-Rules
 Status
 TCN
 TE

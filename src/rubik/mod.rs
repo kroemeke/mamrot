@@ -176,7 +176,7 @@ impl Cube {
         self.string_1.clear();
 
         // Select a strategy
-        let strategy = rng.gen_range(0..7);
+        let strategy = rng.gen_range(0..8);
 
         match strategy {
             0 => {
@@ -234,7 +234,7 @@ impl Cube {
                             if !self.wordlist.is_empty() {
                                 self.string_1.extend_from_slice(
                                     self.wordlist.choose(rng).unwrap().as_bytes(),
-                                )
+                                );
                             }
                         }
 
@@ -265,6 +265,33 @@ impl Cube {
             6 => {
                 // Strategy 7: Empty Value (Do nothing)
                 // self.string_1 is already cleared at the start of rotate
+            }
+            7 => {
+                // Strategy 8: Valid Prefix + Invalid UTF-8 / Garbage
+                // Helpful for finding parsers that crash on bad encoding after a valid token
+
+                // 1. Optional Valid Prefix
+                if rng.gen_bool(0.7) {
+                    if !self.wordlist.is_empty() && rng.gen_bool(0.5) {
+                        self.string_1
+                            .extend_from_slice(self.wordlist.choose(rng).unwrap().as_bytes());
+                    } else {
+                        self.string_1
+                            .extend_from_slice(MAGIC_STRINGS.choose(rng).unwrap().as_bytes());
+                    }
+                }
+
+                // 2. Append Garbage (High bit set bytes likely to be invalid UTF-8)
+                let garbage_len = rng.gen_range(1..=128);
+                for _ in 0..garbage_len {
+                    // Generate full u8 range, but bias towards high bytes (128-255)
+                    // to ensure invalid UTF-8 sequences
+                    if rng.gen_bool(0.7) {
+                        self.string_1.push(rng.gen_range(128..=255));
+                    } else {
+                        self.string_1.push(rng.gen::<u8>());
+                    }
+                }
             }
             _ => {}
         }
@@ -409,6 +436,28 @@ mod tests {
         assert!(
             found_empty,
             "Should have generated an empty value (Strategy 7)"
+        );
+    }
+
+    #[test]
+    fn test_rotate_generates_invalid_utf8() {
+        let mut cube = Cube::new();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(12345); // Seed that hits Strategy 7
+
+        let mut found_invalid_utf8 = false;
+
+        // Run enough times to be statistically likely to hit Strategy 7
+        for _ in 0..2000 {
+            cube.rotate(&mut rng);
+            if std::str::from_utf8(&cube.string_1).is_err() {
+                found_invalid_utf8 = true;
+                break;
+            }
+        }
+
+        assert!(
+            found_invalid_utf8,
+            "Should have generated invalid UTF-8 sequences (Strategy 8)"
         );
     }
 }
